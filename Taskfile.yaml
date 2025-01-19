@@ -1,0 +1,407 @@
+version: '3'
+
+tasks:
+
+  default:
+    desc: "Main entry point for the Taskfile"
+    cmds:
+      - task full-install
+
+  full-install:
+    desc: "Main Taskfile - Select an option RKE2 Installation with interactive options"
+    silent: true
+    cmds:
+      - |
+        clear
+        echo "Choose an installation type:"
+        echo "1) RKE2 Server (Control Plane + ETCD)"
+        echo "2) RKE2 Agent (Worker Node)"
+        echo "3) Exit"
+        read -p "Enter your choice [1-3]: " type_choice
+        case $type_choice in
+          1)
+            echo "You selected RKE2 Server installation."
+            task  _server
+            ;;
+          2)
+            echo "You selected RKE2 Agent installation."
+            task _agent
+            ;;
+          3)
+            echo "Exiting..."
+            ;;
+          *)
+            echo "Invalid choice. Exiting..."
+            ;;
+        esac
+
+  _server:
+    desc: "Full installation with option selection RKE2 server"
+    cmds:
+
+      - |
+        clear
+        echo "Choose RKE2 Server installation type:"
+        echo "1) First-time rke2 server installation"
+        echo "2) Subsequent server configurations"
+        echo "3) Go back to main menu"
+        read -p "Enter your choice [1-3]: " server_choice
+        case $server_choice in
+          1)
+            echo "Running first-time RKE2 Server installation..."
+            task  _first-rke2-server-install
+            ;;
+          2)
+            echo "Running subsequent server configurations..."
+            task  _ha-rke-server-install
+            ;;
+          3)
+            task
+            ;;
+          *)
+            echo "Invalid choice. Returning to main menu..."
+            task
+            ;;
+        esac
+
+  _first-rke2-server-install:
+    desc: "First-time RKE2 Server installation"
+    cmds:
+      - task _update-install-packages
+      - task _get-server-ip
+      - task _get-server-ip-add
+      - task _configure-firewall
+      - task _download-rke2-server
+      - task _enable-rke2-server
+      - task _install-kubectl
+      - task _k-alias
+      - task _add-kubeconfig-bashrc
+      # - task _save-node-token
+      # - task _show-node-token
+  
+  _ha-rke-server-install:
+    desc: "Subsequent server configurations"
+    cmds:
+      - task _update-install-packages
+      - task _get-server-ip
+      - task _write-master-ha-config-file
+      - task _configure-firewall
+      - task _download-rke2-server
+      - task _enable-rke2-server
+      - task _install-kubectl
+      - task _k-alias
+      - task _add-kubeconfig-bashrc
+      # - task _save-node-token
+      # - task _show-node-token
+
+  _update-install-packages:
+    desc: "Update package lists"
+    cmds:
+      - sudo apt update
+      - sudo apt install -y curl apt-transport-https nfs-common open-iscsi
+      - sudo apt upgrade -y
+      - sudo apt autoremove -y
+
+  _get-server-ip:
+    desc: "Retrieve the server's IP address"
+    cmds:
+      - |
+        sudo mkdir -p /etc/rancher/rke2/
+        IP_ADDRESS=$(hostname -I | awk '{print $1}')
+        if [ -z "$IP_ADDRESS" ]; then
+          echo "Unable to retrieve the server IP address."
+        else
+          echo "Server IP Address: $IP_ADDRESS"
+        fi
+
+  _get-server-ip-add:
+    desc: "Retrieve the server's IP address"
+    cmds:
+      - |
+        sudo mkdir -p /etc/rancher/rke2/
+        IP_ADDRESS=$(hostname -I | awk '{print $1}')
+        if [ -z "$IP_ADDRESS" ]; then
+          echo "Unable to retrieve the server IP address."
+        else
+          echo "Server IP Address: $IP_ADDRESS"
+        fi
+
+        echo "node-ip: $IP_ADDRESS
+        advertise-address: $IP_ADDRESS
+        tls-san:
+          - $IP_ADDRESS" | sudo tee /etc/rancher/rke2/config.yaml > /dev/null
+
+  _configure-firewall:
+    desc: "Configure firewall rules for RKE2"
+    cmds:
+      - sudo ufw allow 6443/tcp
+      - sudo ufw allow 10250/tcp
+      - sudo ufw reload
+
+
+  _write-config-file:
+    dotenv:
+      - '.env'
+    desc: "Create and write the RKE2 configuration file using environment variables"
+    cmds:
+      - |
+        echo "node-ip: $MASTER1_IP
+        advertise-address: $MASTER1_IP
+        tls-san:
+          - $MASTER1_IP" | sudo tee /etc/rancher/rke2/config.yaml > /dev/null
+
+  _write-master-ha-config-file:
+    dotenv:
+      - '.env'
+    desc: "Create and write the RKE2 configuration file using environment variables"
+    cmds:
+      - |
+
+        sudo mkdir -p /etc/rancher/rke2/
+        IP_ADDRESS=$(hostname -I | awk '{print $1}')
+        if [ -z "$IP_ADDRESS" ]; then
+          echo "Unable to retrieve the server IP address."
+        else
+          echo "Server IP Address: $IP_ADDRESS"
+        fi
+
+        echo "server:  https://$MASTER1_IP:9345
+        token: $TOKEN
+        tls-san:
+          - $MASTER1_IP
+          - $MASTER2_IP
+          - $MASTER3_IP" | sudo tee /etc/rancher/rke2/config.yaml > /dev/null
+ 
+  _write-worker-config-file:
+    dotenv:
+      - '.env'
+    desc: "Create and write the RKE2 configuration file using environment variables"
+    cmds:
+      - |
+
+        sudo mkdir -p /etc/rancher/rke2/
+        IP_ADDRESS=$(hostname -I | awk '{print $1}')
+        if [ -z "$IP_ADDRESS" ]; then
+          echo "Unable to retrieve the server IP address."
+        else
+          echo "Server IP Address: $IP_ADDRESS"
+        fi
+
+
+        echo "server: https://$MASTER1_IP:9345
+        token: $TOKEN" | sudo tee /etc/rancher/rke2/config.yaml > /dev/null
+
+  _download-rke2-server:
+    dotenv:
+      - '.env'
+    desc: "Download and install the RKE2 server"
+    cmds:
+      - curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_TYPE="server" sh
+
+
+  _enable-rke2-server:
+    desc: "Enable and start the RKE2 server service"
+    cmds:
+      - sudo systemctl enable rke2-server
+      - sudo systemctl start rke2-server
+
+  _install-kubectl:
+    desc: "Install kubectl"
+    cmds:
+      - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      - chmod +x kubectl
+      - sudo mv kubectl /usr/local/bin/
+      # - echo "kubectl installed successfully. Version: $(kubectl version --client --short)"
+  
+  _k-alias:
+    desc: "kubectl alias as k"
+    cmds:
+      - |
+        echo 'alias k=kubectl' >>~/.bashrc
+        echo 'complete -F __start_kubectl k' >>~/.bashrc
+        source ~/.bashrc
+
+  _add-kubeconfig-bashrc:
+    desc: "Add KUBECONFIG to .bashrc"
+    cmds:
+      - |
+        if ! grep -q "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml" ~/.bashrc; then
+          echo "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml" >> ~/.bashrc
+          echo "KUBECONFIG added to .bashrc"
+        else
+          echo "KUBECONFIG already exists in .bashrc"
+        fi
+      - source ~/.bashrc
+      - echo "Testing kubectl command..."
+      - kubectl version --client || echo "kubectl not working. Check your setup."
+
+  _show-node-token:
+    desc: "Display the RKE2 server node token"
+    cmds:
+      - |
+        if [ -f /var/lib/rancher/rke2/server/node-token ]; then
+          echo "Node Token:"
+          cat /var/lib/rancher/rke2/server/node-token
+        else
+          echo "Node token file not found at /var/lib/rancher/rke2/server/node-token"
+        fi
+
+  _save-node-token:
+    desc: "Save the RKE2 server node token to a file in the current directory"
+    cmds:
+      - |
+        if [ -f /var/lib/rancher/rke2/server/node-token ]; then
+          cp /var/lib/rancher/rke2/server/node-token ./node-token
+          echo "Node token saved to ./node-token"
+        else
+          echo "Node token file not found at /var/lib/rancher/rke2/server/node-token"
+        fi
+
+  _agent:
+    desc: "Full installation with option selection RKE2 server"
+    cmds:
+      - |
+        clear
+        echo "Choose RKE2 Server installation type:"
+        echo "1) Worker server installation"
+        echo "2) Go back to main menu"
+        read -p "Enter your choice [1-2]: " server_choice
+        case $server_choice in
+          1)
+            echo "Running first-time RKE2 Server installation..."
+            task  _first-rke2-agent-install
+            ;;
+          2)
+            task
+            ;;
+          *)
+            echo "Invalid choice. Returning to main menu..."
+            task
+            ;;
+        esac
+
+  _first-rke2-agent-install:
+    desc: "First-time RKE2 Server installation"
+    cmds:
+      - task _update-install-packages
+      - task _get-server-ip
+      - task _write-worker-config-file
+      - task _configure-firewall
+      - task _download-rke2-agent
+      - task _enable-rke2-agent
+      - task _install-kubectl
+      - task _k-alias
+      - task _add-kubeconfig-bashrc
+      # - task _save-node-token
+      # - task _show-node-token
+  
+  _update-install-packages:
+    desc: "Update package lists"
+    cmds:
+      - sudo apt update
+      - sudo apt install -y curl apt-transport-https nfs-common open-iscsi
+      - sudo apt upgrade -y
+      - sudo apt autoremove -y
+
+  _get-server-ip:
+    desc: "Retrieve the server's IP address"
+    cmds:
+      - |
+        sudo mkdir -p /etc/rancher/rke2/
+        IP_ADDRESS=$(hostname -I | awk '{print $1}')
+        if [ -z "$IP_ADDRESS" ]; then
+          echo "Unable to retrieve the server IP address."
+        else
+          echo "Server IP Address: $IP_ADDRESS"
+        fi
+
+  _configure-firewall:
+    desc: "Configure firewall rules for RKE2"
+    cmds:
+      - sudo ufw allow 6443/tcp
+      - sudo ufw allow 10250/tcp
+      - sudo ufw reload
+
+  _write-worker-config-file:
+    dotenv:
+      - '.env'
+    desc: "Create and write the RKE2 configuration file using environment variables"
+    cmds:
+      - |
+
+        sudo mkdir -p /etc/rancher/rke2/
+        IP_ADDRESS=$(hostname -I | awk '{print $1}')
+        if [ -z "$IP_ADDRESS" ]; then
+          echo "Unable to retrieve the server IP address."
+        else
+          echo "Server IP Address: $IP_ADDRESS"
+        fi
+
+
+        echo "server: https://$MASTER1_IP:9345
+        token: $TOKEN" | sudo tee /etc/rancher/rke2/config.yaml > /dev/null
+
+  _download-rke2-agent:
+    dotenv:
+      - '.env'
+    desc: "Download and install the RKE2 agent"
+    cmds:
+      - curl -sfL https://get.rke2.io | sudo INSTALL_RKE2_TYPE="agent" sh
+
+
+  _enable-rke2-agent:
+    desc: "Enable and start the RKE2 server service"
+    cmds:
+      - sudo systemctl enable rke2-agents
+      - sudo systemctl start rke2-agents
+
+  _install-kubectl:
+    desc: "Install kubectl"
+    cmds:
+      - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+      - chmod +x kubectl
+      - sudo mv kubectl /usr/local/bin/
+  
+  _k-alias:
+    desc: "kubectl alias as k"
+    cmds:
+      - |
+        echo 'alias k=kubectl' >>~/.bashrc
+        echo 'complete -F __start_kubectl k' >>~/.bashrc
+        source ~/.bashrc
+
+  _add-kubeconfig-bashrc:
+    desc: "Add KUBECONFIG to .bashrc"
+    cmds:
+      - |
+        if ! grep -q "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml" ~/.bashrc; then
+          echo "export KUBECONFIG=/etc/rancher/rke2/rke2.yaml" >> ~/.bashrc
+          echo "KUBECONFIG added to .bashrc"
+        else
+          echo "KUBECONFIG already exists in .bashrc"
+        fi
+      - source ~/.bashrc
+      - echo "Testing kubectl command..."
+      - kubectl version --client || echo "kubectl not working. Check your setup."
+
+  _show-node-token:
+    desc: "Display the RKE2 server node token"
+    cmds:
+      - |
+        if [ -f /var/lib/rancher/rke2/server/node-token ]; then
+          echo "Node Token:"
+          cat /var/lib/rancher/rke2/server/node-token
+        else
+          echo "Node token file not found at /var/lib/rancher/rke2/server/node-token"
+        fi
+
+  _save-node-token:
+    desc: "Save the RKE2 server node token to a file in the current directory"
+    cmds:
+      - |
+        if [ -f /var/lib/rancher/rke2/server/node-token ]; then
+          cp /var/lib/rancher/rke2/server/node-token ./node-token
+          echo "Node token saved to ./node-token"
+        else
+          echo "Node token file not found at /var/lib/rancher/rke2/server/node-token"
+        fi
