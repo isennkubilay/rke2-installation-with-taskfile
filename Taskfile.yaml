@@ -352,8 +352,8 @@ tasks:
   _enable-rke2-agent:
     desc: "Enable and start the RKE2 server service"
     cmds:
-      - sudo systemctl enable rke2-agents
-      - sudo systemctl start rke2-agents
+      - sudo systemctl enable rke2-agent
+      - sudo systemctl start rke2-agent
 
   _install-kubectl:
     desc: "Install kubectl"
